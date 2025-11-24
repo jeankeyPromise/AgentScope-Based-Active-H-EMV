@@ -21,7 +21,7 @@
 
 **Active-H-EMV** 是一个面向具身智能（Embodied AI）的长时序情景记忆系统。本项目作为本科直博毕业设计，旨在解决传统 H-EMV (Hierarchical Episodic Memory Verbalization) 算法在长期运行中面临的**存储无限膨胀**与**视觉误差累积**两大难题。
 
-本项目创新性地将 **AgentScope** 多智能体协作框架引入记忆管理，提出了一种**“双轨制”**融合方案：
+本项目创新性地将 **AgentScope** 多智能体协作框架引入记忆管理，提出了一种 **“双轨制”** 融合方案：
 
 1.  **主动遗忘机制 (Active Forgetting):** 基于信息熵与艾宾浩斯曲线的效用评价算法，自动修剪低价值记忆。
 2.  **追溯性记忆编辑 (Retroactive Editing):** 基于人机回环（Human-in-the-loop）反馈，修正历史视觉误差并阻断错误传播。
