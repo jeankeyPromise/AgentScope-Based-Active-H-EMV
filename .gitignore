@@ -1,0 +1,19 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# 环境变量 (包含key，千万别上传)
+.env
+
+# IDE 配置
+.vscode/
+.idea/
+
+# 依赖包
+venv/
+anaconda3/
+
+# 大文件/模型权重
+*.pth
+*.ckpt
+logs/
