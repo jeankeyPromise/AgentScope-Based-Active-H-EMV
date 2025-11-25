@@ -38,13 +38,15 @@ class BaseMemoryAgent(AgentBase):
             storage_backends: 存储后端配置 {"vector": ..., "graph": ..., "object": ...}
             **kwargs: 其他AgentScope参数
         """
-        super().__init__(
-            name=name,
-            sys_prompt=sys_prompt,
-            model_config_name=model_config_name,
-            **kwargs
-        )
+        # AgentBase.__init__() 不接受参数，需要先调用然后设置属性
+        super().__init__()
         
+        # 设置 Agent 属性
+        self.name = name
+        self.sys_prompt = sys_prompt or ""
+        self.model_config_name = model_config_name
+        
+        # 存储相关属性
         self.storage_backends = storage_backends or {}
         self.access_log: List[Dict[str, Any]] = []
         
