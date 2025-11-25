@@ -5,7 +5,7 @@
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 import agentscope
-from agentscope.agents import AgentBase
+from agentscope.agent import AgentBase
 from agentscope.message import Msg
 from loguru import logger
 
