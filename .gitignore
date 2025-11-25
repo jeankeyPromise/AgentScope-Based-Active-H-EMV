@@ -11,6 +11,9 @@ etcd_data/
 milvus_data/
 minio_data/
 
+#测试配置
+test_db/
+
 # IDE 配置
 .vscode/
 .idea/
