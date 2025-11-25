@@ -19,7 +19,7 @@
 
 ## <span id="intro">📖 项目简介 (Introduction)</span>
 
-**Active-H-EMV** 是一个面向具身智能（Embodied AI）的长时序情景记忆系统。本项目作为本科直博毕业设计，旨在解决传统 H-EMV (Hierarchical Episodic Memory Verbalization) 算法在长期运行中面临的**存储无限膨胀**与**视觉误差累积**两大难题。
+**Active-H-EMV** 是一个面向具身智能（Embodied AI）的长时序情景记忆系统。本项目作为本科毕业设计，旨在解决传统 H-EMV (Hierarchical Episodic Memory Verbalization) 算法在长期运行中面临的**存储无限膨胀**与**视觉误差累积**两大难题。
 
 本项目创新性地将 **AgentScope** 多智能体协作框架引入记忆管理，提出了一种 **“双轨制”** 融合方案：
 
