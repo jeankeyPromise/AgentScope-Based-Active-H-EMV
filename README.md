@@ -196,10 +196,3 @@ journal = {GitHub repository},
 howpublished = {\url{https://github.com/your-username/active-h-emv}}
 }
 ```
-
------
-
-&lt;div align=&quot;center&quot;&gt;
-Built with ❤️ by [Your Name] using AgentScope
-&lt;/div&gt;
-$$
