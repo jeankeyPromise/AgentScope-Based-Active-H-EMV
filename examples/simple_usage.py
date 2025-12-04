@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 import pickle
 from datetime import datetime
-
+import os
 # 添加项目路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -30,9 +30,9 @@ def main():
     agentscope.init(
         model_configs=[{
             "model_type": "openai_chat",
-            "config_name": "gpt-4o",
-            "model_name": "gpt-4o",
-            "api_key": "your-api-key-here",  # 替换为你的API key
+            "config_name": "qwen-plus",
+            "model_name": "qwen-plus",
+            "api_key": os.getenv("KAIHONG_API_KEY"),  # 替换为你的API key
             "temperature": 0.7
         }],
         project="Active-H-EMV",
