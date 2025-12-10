@@ -63,16 +63,16 @@ def main():
         enable_auto_schedule=False,  # 示例中手动触发
         storage_path="./memory_tree_processed.pkl",
         forgetting={
-            "model_config_name": "gpt-4o",
+            "model_config_name": "qwen-plus",
             "utility_weights": (0.5, 0.3, 0.2),
             "threshold_low": 0.2
         },
         consolidation={
-            "model_config_name": "gpt-4o",
+            "model_config_name": "qwen-plus",
             "similarity_threshold": 0.85
         },
         correction={
-            "model_config_name": "gpt-4o"
+            "model_config_name": "qwen-plus"
         }
     )
     print("✅ MemoryManager已创建\n")
