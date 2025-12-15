@@ -6,7 +6,7 @@ ForgettingAgent - 遗忘Agent
 灵感来源: Ebbinghaus遗忘曲线
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from loguru import logger
 
@@ -206,6 +206,14 @@ class ForgettingAgent(AgentBase):
                 storage_freed = self._text_only(node)
                 stats["forgotten"] += 1
                 stats["storage_saved_mb"] += storage_freed
+            
+            elif action == "merge_or_delete":
+                # 合并或删除节点（需要特殊处理高层节点）
+                storage_freed, nodes_deleted = self._merge_or_delete_node(
+                    node, memory_tree, all_nodes
+                )
+                stats["forgotten"] += nodes_deleted
+                stats["storage_saved_mb"] += storage_freed
         
         return memory_tree, stats
     
@@ -316,6 +324,194 @@ class ForgettingAgent(AgentBase):
         if hasattr(node, 'relations'):
             node.relations = []
             storage_freed += 0.05
+        
+        return storage_freed
+    
+    def _merge_or_delete_node(
+        self,
+        node: Any,
+        memory_tree: HigherLevelSummary,
+        all_nodes: List[Any]
+    ) -> tuple:
+        """
+        合并或删除低效用节点
+        
+        策略:
+        1. 如果是叶子节点（L0/L1/L2），直接删除
+        2. 如果是高层节点（L3+），需要特殊处理:
+           - 先检查子节点的效用值
+           - 如果子节点也低效用，可以删除整个子树
+           - 如果子节点高效用，需要将子节点提升到父节点
+        
+        Returns:
+            (storage_freed_mb, nodes_deleted_count): 释放的存储空间和删除的节点数
+        """
+        storage_freed = 0.0
+        nodes_deleted = 0
+        
+        # 判断节点层级
+        node_level = self._get_node_level(node)
+        
+        # 如果是叶子节点（L0/L1/L2），可以直接删除
+        if node_level <= 2:
+            storage_freed = self._text_only(node)  # 先清理数据
+            nodes_deleted = 1
+            logger.info(f"Deleted leaf node (L{node_level}): {getattr(node, 'nl_summary', '')[:50]}")
+            return storage_freed, nodes_deleted
+        
+        # 如果是高层节点（L3+），需要检查子节点
+        child_nodes = self._get_child_nodes(node)
+        
+        if not child_nodes:
+            # 没有子节点，直接删除
+            storage_freed = self._text_only(node)
+            nodes_deleted = 1
+            logger.info(f"Deleted empty high-level node (L{node_level})")
+            return storage_freed, nodes_deleted
+        
+        # 检查子节点的效用值
+        high_utility_children = []
+        low_utility_children = []
+        
+        for child in child_nodes:
+            child_dict = self._node_to_dict(child)
+            child_utility = child_dict.get("utility_score", 0.5)
+            
+            if child_utility >= self.forgetting_policy.THRESHOLD_MED:
+                high_utility_children.append(child)
+            else:
+                low_utility_children.append(child)
+        
+        # 策略决策
+        if len(high_utility_children) == 0:
+            # 所有子节点都低效用，可以删除整个子树
+            storage_freed = self._delete_subtree(node)
+            nodes_deleted = 1 + len(child_nodes)  # 包括当前节点和所有子节点
+            logger.info(
+                f"Deleted entire subtree (L{node_level}): "
+                f"{len(child_nodes)} children all have low utility"
+            )
+            
+        elif len(high_utility_children) <= 2:
+            # 只有1-2个子节点高效用，可以合并到父节点
+            storage_freed = self._merge_children_to_parent(node, high_utility_children)
+            nodes_deleted = len(low_utility_children)  # 只删除低效用的子节点
+            logger.info(
+                f"Merged {len(high_utility_children)} high-utility children, "
+                f"deleted {len(low_utility_children)} low-utility children"
+            )
+            
+        else:
+            # 多个子节点高效用，不应该删除父节点
+            # 只删除低效用的子节点
+            for child in low_utility_children:
+                child_storage, _ = self._merge_or_delete_node(child, memory_tree, all_nodes)
+                storage_freed += child_storage
+                nodes_deleted += 1
+            
+            # 标记父节点为"已压缩"（保留但标记）
+            if hasattr(node, 'compressed'):
+                node.compressed = True
+            logger.info(
+                f"Preserved high-level node (L{node_level}) with {len(high_utility_children)} "
+                f"high-utility children, deleted {len(low_utility_children)} low-utility children"
+            )
+        
+        return storage_freed, nodes_deleted
+    
+    def _get_node_level(self, node: Any) -> int:
+        """获取节点的层级"""
+        from em.em_tree import (
+            RawDataInstant, SceneGraphInstant, 
+            EventBasedSummary, GoalBasedSummary, HigherLevelSummary
+        )
+        
+        if isinstance(node, RawDataInstant):
+            return 0
+        elif isinstance(node, SceneGraphInstant):
+            return 1
+        elif isinstance(node, EventBasedSummary):
+            return 2
+        elif isinstance(node, GoalBasedSummary):
+            return 3
+        elif isinstance(node, HigherLevelSummary):
+            # 递归计算最高层级
+            if hasattr(node, 'previous_summaries') and node.previous_summaries:
+                max_child_level = max(
+                    self._get_node_level(child) 
+                    for child in node.previous_summaries
+                )
+                return max_child_level + 1
+            return 3
+        else:
+            return 2  # 默认值
+    
+    def _get_child_nodes(self, node: Any) -> List[Any]:
+        """获取节点的所有子节点"""
+        children = []
+        
+        if hasattr(node, 'previous_summaries'):
+            children.extend(node.previous_summaries)
+        elif hasattr(node, 'events'):
+            children.extend(node.events)
+        elif hasattr(node, 'scenes'):
+            children.extend(node.scenes)
+        
+        return children
+    
+    def _delete_subtree(self, node: Any) -> float:
+        """删除整个子树（递归删除所有子节点）"""
+        storage_freed = 0.0
+        
+        # 递归删除子节点
+        child_nodes = self._get_child_nodes(node)
+        for child in child_nodes:
+            storage_freed += self._delete_subtree(child)
+        
+        # 删除当前节点数据
+        storage_freed += self._text_only(node)
+        
+        return storage_freed
+    
+    def _merge_children_to_parent(
+        self,
+        parent_node: Any,
+        high_utility_children: List[Any]
+    ) -> float:
+        """
+        将高效用的子节点合并到父节点
+        
+        策略: 将子节点的摘要合并到父节点的摘要中
+        """
+        storage_freed = 0.0
+        
+        # 删除低效用的子节点
+        all_children = self._get_child_nodes(parent_node)
+        low_utility_children = [
+            child for child in all_children 
+            if child not in high_utility_children
+        ]
+        
+        for child in low_utility_children:
+            storage_freed += self._delete_subtree(child)
+        
+        # 更新父节点的子节点列表
+        if hasattr(parent_node, 'previous_summaries'):
+            parent_node.previous_summaries = high_utility_children
+        elif hasattr(parent_node, 'events'):
+            parent_node.events = high_utility_children
+        
+        # 更新父节点摘要（合并子节点摘要）
+        if hasattr(parent_node, 'nl_summary') and high_utility_children:
+            child_summaries = [
+                getattr(child, 'nl_summary', '') 
+                for child in high_utility_children
+            ]
+            merged_summary = f"[合并] {parent_node.nl_summary}\n" + "\n".join(
+                f"  - {s[:50]}..." if len(s) > 50 else f"  - {s}"
+                for s in child_summaries
+            )
+            parent_node.nl_summary = merged_summary
         
         return storage_freed
 
