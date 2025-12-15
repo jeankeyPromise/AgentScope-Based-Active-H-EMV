@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import numpy as np
 from loguru import logger
+from sentence_transformers import SentenceTransformer
 
 
 class UtilityScorer:
@@ -44,6 +45,7 @@ class UtilityScorer:
         self.alpha = alpha / total
         self.beta = beta / total
         self.gamma = gamma / total
+        self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
         
         self.lambda_decay = lambda_decay
         
@@ -164,11 +166,27 @@ class UtilityScorer:
             """
             
             # 调用LLM
-            # response = llm_model.generate(prompt)
-            # score = float(response.strip())
-            
-            # 占位符
-            score = self._heuristic_salience(nl_summary)
+            # 注意: llm_model 是从 ForgettingAgent 传入的 self.model
+            # AgentScope 的 model 对象有 generate() 方法
+            if llm_model is not None:
+                response = llm_model.generate(prompt)
+                # 尝试解析返回的分数
+                try:
+                    # 提取数字（处理可能的格式：0.85, 0.85分, 分数:0.85等）
+                    import re
+                    match = re.search(r'0?\.\d+|1\.0', response.strip())
+                    if match:
+                        score = float(match.group())
+                    else:
+                        # 如果无法解析，使用启发式方法
+                        logger.warning(f"无法解析LLM返回的分数: {response}, 使用启发式方法")
+                        score = self._heuristic_salience(nl_summary)
+                except ValueError as e:
+                    logger.error(f"解析LLM返回的分数失败: {e}, 使用启发式方法")
+                    score = self._heuristic_salience(nl_summary)
+            else:
+                # 如果没有LLM，使用启发式方法
+                score = self._heuristic_salience(nl_summary)
             
             return np.clip(score, 0.0, 1.0)
             
@@ -211,47 +229,57 @@ class UtilityScorer:
         节点与历史越相似,信息密度越低
         """
         if not all_nodes or len(all_nodes) <= 1:
-            return 1.0  # 唯一节点,高密度
-        
-        node_summary = node.get("nl_summary", "")
+            return 1.0
+
+        # 获取当前向量
+        current_vec = self._get_node_embedding(node)
         node_id = node.get("node_id")
         
-        # 计算与其他节点的相似度 (简化版: 基于词汇重叠)
-        similarities = []
-        for other in all_nodes:
-            if other.get("node_id") == node_id:
-                continue
-            
-            other_summary = other.get("nl_summary", "")
-            sim = self._text_similarity(node_summary, other_summary)
-            similarities.append(sim)
+        # 收集历史向量 (过滤掉自己)
+        history_vecs = [
+            self._get_node_embedding(n) for n in all_nodes 
+            if n.get("node_id") != node_id
+        ]
         
-        if not similarities:
+        # 过滤无效向量
+        history_vecs = [v for v in history_vecs if v is not None]
+        if not history_vecs:
             return 1.0
-        
-        # 信息密度 = 1 - 最大相似度
-        max_sim = max(similarities)
-        return 1.0 - max_sim
-    
-    def _text_similarity(self, text1: str, text2: str) -> float:
-        """
-        简化的文本相似度计算 (基于词汇重叠)
-        
-        更好的实现应该使用embedding余弦相似度
-        """
-        if not text1 or not text2:
-            return 0.0
-        
-        # 分词 (简化版)
-        words1 = set(text1.lower().split())
-        words2 = set(text2.lower().split())
-        
-        # Jaccard相似度
-        intersection = len(words1 & words2)
-        union = len(words1 | words2)
-        
-        if union == 0:
-            return 0.0
-        
-        return intersection / union
 
+        # 矩阵化计算余弦相似度
+        history_matrix = np.array(history_vecs)
+        
+        # 1. 点积 (Dot Product)
+        dot_products = np.dot(history_matrix, current_vec)
+        
+        # 2. 范数 (Norms)
+        curr_norm = np.linalg.norm(current_vec)
+        hist_norms = np.linalg.norm(history_matrix, axis=1)
+        
+        # 3. 余弦相似度 = Dot / (NormA * NormB)
+        # 加上 1e-9 防止分母为零
+        similarities = dot_products / (curr_norm * hist_norms + 1e-9)
+        
+        # 取最大相似度 (截断在 0-1 之间)
+        max_sim = max(0.0, float(np.max(similarities)))
+
+        return 1.0 - max_sim
+
+    def _get_node_embedding(self, node: Dict) -> Optional[np.ndarray]:
+        """获取节点 Embedding (优先读缓存 -> 现场计算 -> 回写缓存)"""
+        # 1. 缓存命中
+        if "embedding" in node and node["embedding"] is not None:
+            val = node["embedding"]
+            return np.array(val) if isinstance(val, list) else val
+            
+        # 2. 现场计算
+        text = node.get("nl_summary", "")
+        if not text:
+            return np.zeros(384) 
+            
+        # self.encoder 假定已在 __init__ 中初始化
+        vec = self.encoder.encode(text)
+        
+        # 3. 回写缓存
+        node["embedding"] = vec 
+        return vec
