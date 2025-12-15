@@ -26,3 +26,6 @@ anaconda3/
 *.pth
 *.ckpt
 logs/
+
+# 测试代码
+tests/
